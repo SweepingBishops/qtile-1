@@ -2,6 +2,10 @@ Qtile x.xx.x, released XXXX-XX-XX:
     !!! Config breakage !!!
         - lazy.qtile.display_kb() no longer receives any arguments. If you passed it any arguments
           (which were ignored previously), remove them.
+        - The format argument for widget.Net() now takes `down` and `down_suffix` instead of just `down`.
+          This facilitates formatting of `down` (the same for `up`). If you are already using the `format` parameter,
+          consider setting the precision to avoid seeing a large number of decimals on the widget.
+          Eg: something like `{down:.2f}` for two decimal points.
     * features
         - Add ability to draw borders and add margins to the `Max` layout.
     * bugfixes

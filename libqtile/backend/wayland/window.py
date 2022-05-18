@@ -657,7 +657,7 @@ class XdgWindow(Window[XdgSurface]):
         if self in self.core.pending_windows:
             self.core.pending_windows.remove(self)
             self._wid = self.core.new_wid()
-            logger.debug(f"Managing new top-level window with window ID: {self.wid}")
+            logger.debug("Managing new top-level window with window ID: %s", self._wid)
 
             # Save the client's desired geometry
             surface = self.surface
@@ -895,7 +895,7 @@ class XWindow(Window[xwayland.Surface]):
         if self in self.core.pending_windows:
             self.core.pending_windows.remove(self)
             self._wid = self.core.new_wid()
-            logger.debug(f"Managing new XWayland window with window ID: {self.wid}")
+            logger.debug("Managing new XWayland window with window ID: %s", self._wid)
 
             # Make it static if it isn't a regular window
             if self.surface.override_redirect:
@@ -1698,9 +1698,13 @@ class XdgPopupWindow(HasListeners):
             box = xdg_popup.base.get_geometry()
             lx, ly = self.core.output_layout.closest_point(parent.x + box.x, parent.y + box.y)
             wlr_output = self.core.output_layout.output_at(lx, ly)
-            assert wlr_output and isinstance(wlr_output.data, Output)
-            self.output = wlr_output.data
-            box = Box(*self.output.get_geometry())
+            if wlr_output and wlr_output.data:
+                output = wlr_output.data
+            else:
+                logger.warning("Failed to find output at for xdg_popup. Please report.")
+                output = self.core.outputs[0]
+            self.output = output
+            box = Box(*output.get_geometry())
             box.x = round(box.x - lx)
             box.y = round(box.y - ly)
             self.output_box = box

@@ -357,7 +357,7 @@ Updating the widget
 ===================
 
 Widgets will usually need to update their content periodically. There are numerous ways
-that this can be done. Some of the most common are summarised below.
+that this can be done. Some of the most common ones are summarised below.
 
 Timers
 ------
@@ -402,7 +402,7 @@ Using dbus
 Qtile uses ``dbus-next`` for interacting with dbus.
 
 If you just want to listen for signals then Qtile provides a helper method called
-``add_signal_receiver`` which can subscribe to a signal and trigegr a callback
+``add_signal_receiver`` which can subscribe to a signal and trigger a callback
 whenever that signal is broadcast.
 
 .. note::
@@ -410,7 +410,7 @@ whenever that signal is broadcast.
     must make sure, where necessary, calls to dbus are made via coroutines.
 
     There is a ``_config_async`` coroutine in the base widget class which can
-    be overriden to provide an entry point for asyncio calls in your widget.
+    be overridden to provide an entry point for asyncio calls in your widget.
 
 For example, the Mpris2 widget uses the following code:
 
@@ -502,6 +502,39 @@ can do the following:
         def mouse_leave(self, *args, **kwargs):
             self.format = self.short_format
             self.bar.draw()
+
+Exposing commands to the IPC interface
+======================================
+
+If you want to control your widget via ``lazy`` or scripting commands (such as ``qtile cmd-obj``), you
+will need to expose the relevant methods in your widget. Exposing commands is done by adding the
+``@expose_command()`` decorator to your method. For example:
+
+.. code:: python
+
+    from libqtile.command.base import expose_command
+    from libqtile.widget import TextBox
+
+
+    class ExposedWidget(TextBox):
+
+        @expose_command()
+        def uppercase(self):
+            self.update(self.text.upper())
+
+Text in the ``ExposedWidget`` can now be made into upper case by calling ``lazy.widget["exposedwidget"].uppercase()``
+or ``qtile cmd-onj -o widget exposedwidget -f uppercase``.
+
+If you want to expose a method under multiple names, you can pass these additional names to the decorator. For
+example, decorating a method with:
+
+.. code:: python
+
+    @expose_command(["extra", "additional"])
+    def mymethod(self):
+        ...
+
+will make make the method visible under ``mymethod``, ``extra`` and ``additional``.
 
 Debugging
 =========

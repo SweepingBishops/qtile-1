@@ -52,7 +52,8 @@ class WindowTabs(base._TextBox):
     ]
 
     def __init__(self, **config):
-        base._TextBox.__init__(self, width=bar.STRETCH, **config)
+        width = config.pop("width", bar.STRETCH)
+        base._TextBox.__init__(self, width=width, **config)
         self.add_defaults(WindowTabs.defaults)
         if not isinstance(self.selected, (tuple, list)):
             self.selected = (self.selected, self.selected)
@@ -62,7 +63,7 @@ class WindowTabs(base._TextBox):
         hook.subscribe.client_name_updated(self.update)
         hook.subscribe.focus_change(self.update)
         hook.subscribe.float_change(self.update)
-        self.add_callbacks({"Button1": self.bar.screen.group.cmd_next_window})
+        self.add_callbacks({"Button1": self.bar.screen.group.next_window})
 
     def update(self, *args):
         names = []

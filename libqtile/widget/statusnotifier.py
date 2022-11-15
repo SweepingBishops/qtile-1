@@ -139,21 +139,13 @@ class StatusNotifierItem:  # noqa: E303
             logger.warning("Unable to find StatusNotifierItem interface on %s", self.service)
             return False
 
-        # Default to XDG icon:
-        icon_name = await self.item.get_icon_name()
-
-        try:
-            icon_path = await self.item.get_icon_theme_path()
-            self.icon = self._get_custom_icon(icon_name, icon_path)
-        except (AttributeError, DBusError):
-            pass
-
-        if not self.icon:
-            self.icon = self._get_xdg_icon(icon_name)
+        await self._get_local_icon()
 
         # If there's no XDG icon, try to use icon provided by application
-        if self.icon is None:
+        if self.icon:
+            self.item.on_new_icon(self._update_local_icon)
 
+        else:
             # Get initial application icons:
             for icon in ["Icon", "Attention", "Overlay"]:
                 await self._get_icon(icon)
@@ -170,6 +162,24 @@ class StatusNotifierItem:  # noqa: E303
             )
 
         return True
+
+    async def _get_local_icon(self):
+        # Default to XDG icon:
+        icon_name = await self.item.get_icon_name()
+
+        try:
+            icon_path = await self.item.get_icon_theme_path()
+            self.icon = self._get_custom_icon(icon_name, icon_path)
+        except (AttributeError, DBusError):
+            pass
+
+        if not self.icon:
+            self.icon = self._get_xdg_icon(icon_name)
+
+    def _update_local_icon(self):
+        self.icon = None
+        task = asyncio.create_task(self._get_local_icon())
+        task.add_done_callback(self._redraw)
 
     def _new_icon(self):
         task = asyncio.create_task(self._get_icon("Icon"))
@@ -238,7 +248,7 @@ class StatusNotifierItem:  # noqa: E303
         """Method to invalidate icon cache and redraw icons."""
         self._invalidate_icons()
         if self.on_icon_changed is not None:
-            self.on_icon_changed()
+            self.on_icon_changed(self)
 
     def _invalidate_icons(self):
         self.surfaces = {}
@@ -326,7 +336,8 @@ class StatusNotifierItem:  # noqa: E303
         return icon
 
     def activate(self):
-        asyncio.create_task(self._activate())
+        if hasattr(self, "call_activate"):
+            asyncio.create_task(self._activate())
 
     async def _activate(self):
         # Call Activate method and pass window position hints
@@ -484,6 +495,10 @@ class StatusNotifierHost:  # noqa: E303
         self.items: List[StatusNotifierItem] = []
         self.name = "qtile"
         self.icon_theme: str = None
+        self.started = False
+        self._on_item_added: List[Callable] = []
+        self._on_item_removed: List[Callable] = []
+        self._on_icon_changed: List[Callable] = []
 
     async def start(
         self,
@@ -491,10 +506,27 @@ class StatusNotifierHost:  # noqa: E303
         on_item_removed: Optional[Callable] = None,
         on_icon_changed: Optional[Callable] = None,
     ):
+        """
+        Starts the host if not already started.
+
+        Widgets should register their callbacks via this method.
+        """
+        if on_item_added:
+            self._on_item_added.append(on_item_added)
+
+        if on_item_removed:
+            self._on_item_removed.append(on_item_removed)
+
+        if on_icon_changed:
+            self._on_icon_changed.append(on_icon_changed)
+
+        if self.started:
+            if on_item_added:
+                for item in self.items:
+                    on_item_added(item)
+            return
+
         self.bus = await MessageBus().connect()
-        self.on_item_added = on_item_added
-        self.on_item_removed = on_item_removed
-        self.on_icon_changed = on_icon_changed
         for iface in BUS_NAMES:
             w = StatusNotifierWatcher(iface)
             w.on_item_added = self.add_item
@@ -505,6 +537,7 @@ class StatusNotifierHost:  # noqa: E303
             # the host on the bus.
             w.RegisterStatusNotifierHost(self.name)
             self.watchers.append(w)
+            self.started = True
 
     def item_added(self, item, service, future):
         success = future.result()
@@ -512,8 +545,8 @@ class StatusNotifierHost:  # noqa: E303
         # add to our list and redraw the bar
         if success:
             self.items.append(item)
-            if self.on_item_added:
-                self.on_item_added(item)
+            for callback in self._on_item_added:
+                callback(item)
 
         # It's an invalid item so let's remove it from the watchers
         else:
@@ -529,7 +562,7 @@ class StatusNotifierHost:  # noqa: E303
         start it.
         """
         item = StatusNotifierItem(self.bus, service, path=path, icon_theme=self.icon_theme)
-        item.on_icon_changed = self.on_icon_changed
+        item.on_icon_changed = self.item_icon_changed
         if item not in self.items:
             task = asyncio.create_task(item.start())
             task.add_done_callback(partial(self.item_added, item, service))
@@ -539,8 +572,12 @@ class StatusNotifierHost:  # noqa: E303
         # remove it and redraw the bar
         if interface in self.items:
             self.items.remove(interface)
-            if self.on_item_removed:
-                self.on_item_removed(interface)
+            for callback in self._on_item_removed:
+                callback(interface)
+
+    def item_icon_changed(self, item):
+        for callback in self._on_icon_changed:
+            callback(item)
 
 
 host = StatusNotifierHost()  # noqa: E303
@@ -554,8 +591,8 @@ class StatusNotifier(base._Widget):
     As per the specification, app icons are first retrieved from the
     user's current theme. If this is not available then the app may
     provide its own icon. In order to use this functionality, users
-    are recommended to install the `xdg`_ module to support retrieving
-    icons from the selected theme.
+    are recommended to install the `pyxdg <https://pypi.org/project/pyxdg/>`__
+    module to support retrieving icons from the selected theme.
 
     Letf-clicking an icon will trigger an activate event.
 
@@ -565,8 +602,6 @@ class StatusNotifier(base._Widget):
         However, a modded version of the widget which provides basic menu
         support is available from elParaguayo's `qtile-extras
         <https://github.com/elParaguayo/qtile-extras>`_ repo.
-
-    .. _xdg: https://pypi.org/project/xdg/
     """
 
     orientations = base.ORIENTATION_BOTH

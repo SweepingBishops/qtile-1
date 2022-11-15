@@ -45,6 +45,7 @@ class Icon(window._Window):
 
     def __init__(self, win, qtile, systray):
         window._Window.__init__(self, win, qtile)
+        self.hidden = True
         self.systray = systray
         # win.get_name() may return None when apps provide a temporary window before the icon window
         # we need something in self.name in order to sort icons so we use the window's WID.
@@ -95,7 +96,9 @@ class Icon(window._Window):
     handle_UnmapNotify = handle_DestroyNotify  # noqa: N815
 
 
-class Systray(window._Window, base._Widget):
+# Mypy doesn't like the inheritance of height and width as _Widget's
+# properties are read only but _Window's have a getter and setter.
+class Systray(base._Widget, window._Window):  # type: ignore[misc]
     """
     A widget that manages system tray.
 

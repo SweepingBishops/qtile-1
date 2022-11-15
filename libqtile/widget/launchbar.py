@@ -36,7 +36,7 @@ displayed instead.
 To execute a software:
  - ('thunderbird', 'thunderbird -safe-mode', 'launch thunderbird in safe mode')
 To execute a python command in qtile, begin with by 'qshell:'
- - ('logout', 'qshell:self.qtile.cmd_shutdown()', 'logout from qtile')
+ - ('logout', 'qshell:self.qtile.shutdown()', 'logout from qtile')
 
 
 """
@@ -59,9 +59,7 @@ class LaunchBar(base._Widget):
 
     Text will displayed when no icon is found.
 
-    Widget requirements: pyxdg_.
-
-    .. _pyxdg: https://freedesktop.org/wiki/Software/pyxdg/
+    Widget requirements: `pyxdg <https://pypi.org/project/pyxdg/>`__.
     """
 
     orientations = base.ORIENTATION_HORIZONTAL
@@ -81,8 +79,11 @@ class LaunchBar(base._Widget):
             [],
             "A list of tuples (software_name, command_to_execute, comment), for example:"
             " [('thunderbird', 'thunderbird -safe-mode', 'launch thunderbird in safe mode'), "
-            " ('logout', 'qshell:self.qtile.cmd_shutdown()', 'logout from qtile')]",
+            " ('logout', 'qshell:self.qtile.shutdown()', 'logout from qtile')]",
         ),
+        ("text_only", False, "Don't use any icons."),
+        ("icon_size", None, "Size of icons. ``None`` to fit to bar."),
+        ("padding_y", 0, "Vertical adjustment for icons."),
     ]
 
     def __init__(
@@ -127,13 +128,18 @@ class LaunchBar(base._Widget):
 
     def setup_images(self):
         """Create image structures for each icon files."""
+        self._icon_size = self.icon_size if self.icon_size is not None else self.bar.height - 4
+        self._icon_padding = (self.bar.height - self._icon_size) // 2
+
         for img_name, iconfile in self.icons_files.items():
-            if iconfile is None:
-                logger.warning(
-                    'No icon found for application "%s" (%s) switch to text mode',
-                    img_name,
-                    iconfile,
-                )
+            if iconfile is None or self.text_only:
+                # Only warn the user that there's no icon if they haven't set text only mode
+                if not self.text_only:
+                    logger.warning(
+                        'No icon found for application "%s" (%s) switch to text mode',
+                        img_name,
+                        iconfile,
+                    )
                 # if no icon is found and no default icon was set, we just
                 # print the name, based on a textbox.
                 textbox = base._TextBox()
@@ -154,20 +160,20 @@ class LaunchBar(base._Widget):
                 continue
             else:
                 try:
-                    img = cairocffi.ImageSurface.create_from_png(iconfile)
+                    img = Img.from_path(iconfile)
                 except cairocffi.Error:
                     logger.exception(
                         'Error loading icon for application "%s" (%s)', img_name, iconfile
                     )
                     return
 
-            input_width = img.get_width()
-            input_height = img.get_height()
+            input_width = img.width
+            input_height = img.height
 
-            sp = input_height / (self.bar.height - 4)
+            sp = input_height / (self._icon_size)
             width = int(input_width / sp)
 
-            imgpat = cairocffi.SurfacePattern(img)
+            imgpat = cairocffi.SurfacePattern(img.surface)
             scaler = cairocffi.Matrix()
             scaler.scale(sp, sp)
             scaler.translate(self.padding * -1, -2)
@@ -225,7 +231,7 @@ class LaunchBar(base._Widget):
                 if cmd.startswith("qshell:"):
                     exec(cmd[7:].lstrip())
                 else:
-                    self.qtile.cmd_spawn(cmd)
+                    self.qtile.spawn(cmd)
             self.draw()
 
     def draw(self):
@@ -233,11 +239,11 @@ class LaunchBar(base._Widget):
         self.drawer.clear(self.background or self.bar.background)
         xoffset = 0
         for i in sorted(self.progs.keys()):
+            self.drawer.ctx.save()
+            self.drawer.ctx.translate(xoffset, 0)
             self.icons_offsets[i] = xoffset + self.padding
             name = self.progs[i]["name"]
             icon_width = self.icons_widths[name]
-            self.drawer.ctx.move_to(self.offset + xoffset, icon_width)
-            self.drawer.clear(self.background or self.bar.background)
             if isinstance(self.surfaces[name], base._TextBox):
                 # display the name if no icon was found and no default icon
                 textbox = self.surfaces[name]
@@ -247,18 +253,23 @@ class LaunchBar(base._Widget):
                 )
             else:
                 # display an icon
+                self.drawer.ctx.save()
+                self.drawer.ctx.translate(0, self._icon_padding + self.padding_y)
                 self.drawer.ctx.set_source(self.surfaces[name])
                 self.drawer.ctx.paint()
+                self.drawer.ctx.restore()
+
+            self.drawer.ctx.restore()
+
             self.drawer.draw(
                 offsetx=self.offset + xoffset,
                 offsety=self.offsety,
                 width=icon_width + self.padding,
             )
+
             xoffset += icon_width + self.padding
-        if self.padding:
-            self.drawer.draw(
-                offsetx=self.offset + xoffset, offsety=self.offsety, width=self.padding
-            )
+
+        self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
 
     def calculate_length(self):
         """Compute the width of the widget according to each icon width."""

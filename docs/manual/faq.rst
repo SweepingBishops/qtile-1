@@ -73,7 +73,7 @@ LibreOffice menus don't appear or don't stay visible
 ====================================================
 
 A workaround for problem with the mouse in libreoffice is setting the environment variable »SAL_USE_VCLPLUGIN=gen«.
-It is dependet on your system configuration where to do this. e.g. ArchLinux with libreoffice-fresh in /etc/profile.d/libreoffice-fresh.sh.
+It is dependent on your system configuration as to where to do this. e.g. ArchLinux with libreoffice-fresh in /etc/profile.d/libreoffice-fresh.sh.
 
 How can I get my groups to stick to screens?
 ============================================
@@ -88,15 +88,15 @@ of binding keys to ``lazy.group[name].toscreen()``, use this:
     def go_to_group(name: str) -> Callable:
         def _inner(qtile: Qtile) -> None:
             if len(qtile.screens) == 1:
-                qtile.groups_map[name].cmd_toscreen()
+                qtile.groups_map[name].toscreen()
                 return
 
             if name in '123':
                 qtile.focus_screen(0)
-                qtile.groups_map[name].cmd_toscreen()
+                qtile.groups_map[name].toscreen()
             else:
                 qtile.focus_screen(1)
-                qtile.groups_map[name].cmd_toscreen()
+                qtile.groups_map[name].toscreen()
 
         return _inner
 
@@ -131,3 +131,38 @@ Please visit our `qtile-examples`_ repo which contains examples of users' config
 scripts and other useful links.
 
 .. _`qtile-examples`: https://github.com/qtile/qtile-examples
+
+Where are the log files for Qtile?
+==================================
+
+The log files for qtile are at ``~/.local/share/qtile/qtile.log``.
+
+Why do I get an ``AttributeError`` when building Qtile?
+=======================================================
+
+If you see this message:
+``AttributeError: cffi library 'libcairo.so.2' has no function, constant or global variable named 'cairo_xcb_surface_create'``
+when building Qtile then your Cairo version lacks XCB support.
+
+See :ref:`Cairo Error <cairo-errors>` for further information.
+
+How can I match the bar with picom?
+===================================
+
+You can use ``"QTILE_INTERNAL:32c = 1"`` in your picom.conf to match the bar.
+This will match all internal Qtile windows, so if you want to avoid that or to
+target bars individually, you can set a custom property and match that:
+
+.. code-block:: python
+
+   mybar = Bar(...)
+
+   @hook.subscribe.startup
+   def _():
+       mybar.window.window.set_property("QTILE_BAR", 1, "CARDINAL", 32)
+
+This would enable matching on ``mybar``'s window using ``"QTILE_BAR:32c = 1"``.
+See `2526`_ and `1515`_ for more discussion.
+
+.. _`2526`: https://github.com/qtile/qtile/issues/2526
+.. _`1515`: https://github.com/qtile/qtile/issues/1515

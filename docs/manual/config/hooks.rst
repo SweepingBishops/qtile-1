@@ -43,7 +43,7 @@ emitted every time Qtile starts (including restarts), whereas ``startup_once``
 is only emitted on the very first startup.
 
 Let's create an executable file ``~/.config/qtile/autostart.sh`` that will
-start a few programs when Qtile first runs. Remember to `chmod +x` this file so
+start a few programs when Qtile first runs. Remember to `chmod +x ~/.config/qtile/autostart.sh` so
 that it can be executed.
 
 .. code-block:: bash
@@ -64,7 +64,7 @@ We can then subscribe to ``startup_once`` to run this script:
     @hook.subscribe.startup_once
     def autostart():
         home = os.path.expanduser('~/.config/qtile/autostart.sh')
-        subprocess.run([home])
+        subprocess.Popen([home])
 
 Accessing the qtile object
 --------------------------

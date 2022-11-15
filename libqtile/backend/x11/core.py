@@ -153,9 +153,14 @@ class Core(base.Core):
         self.qtile = None  # type: Qtile | None
         self._painter = None
 
-        numlock_code = self.conn.keysym_to_keycode(xcbq.keysyms["Num_Lock"])[0]
+        numlock_code = self.conn.keysym_to_keycode(xcbq.keysyms["num_lock"])[0]
         self._numlock_mask = xcbq.ModMasks.get(self.conn.get_modifier(numlock_code), 0)
-        self._valid_mask = ~(self._numlock_mask | xcbq.ModMasks["lock"] | xcbq.AllButtonsMask)
+        self._valid_mask = ~(
+            self._numlock_mask
+            | xcbq.ModMasks["lock"]
+            | xcbq.AllButtonsMask
+            | xcbq.PointerMotionHintMask
+        )
 
     @property
     def name(self):
@@ -217,7 +222,7 @@ class Core(base.Core):
             loop.remove_reader(self.fd)
             self.fd = None
 
-    def distribute_windows(self, initial) -> None:
+    def on_config_load(self, initial) -> None:
         """Assign windows to groups"""
         assert self.qtile is not None
 
@@ -260,7 +265,7 @@ class Core(base.Core):
 
                 if item.get_wm_type() == "dock" or win.reserved_space:
                     assert self.qtile.current_screen is not None
-                    win.cmd_static(self.qtile.current_screen.index)
+                    win.static(self.qtile.current_screen.index)
                     continue
 
             self.qtile.manage(win)
@@ -600,7 +605,7 @@ class Core(base.Core):
         if atoms["_NET_CURRENT_DESKTOP"] == opcode:
             index = data.data32[0]
             try:
-                self.qtile.groups[index].cmd_toscreen()
+                self.qtile.groups[index].toscreen()
             except IndexError:
                 logger.debug("Invalid desktop index: %s", index)
 
@@ -686,7 +691,7 @@ class Core(base.Core):
 
             if xwin.get_wm_type() == "dock" or win.reserved_space:
                 assert self.qtile.current_screen is not None
-                win.cmd_static(self.qtile.current_screen.index)
+                win.static(self.qtile.current_screen.index)
                 return
 
             self.qtile.manage(win)
@@ -717,11 +722,11 @@ class Core(base.Core):
                 # since the window is dead.
                 pass
             # Clear these atoms as per spec
-            win.window.conn.conn.core.DeleteProperty(  # type: ignore
-                win.wid, win.window.conn.atoms["_NET_WM_STATE"]  # type: ignore
+            win.window.conn.conn.core.DeleteProperty(
+                win.wid, win.window.conn.atoms["_NET_WM_STATE"]
             )
-            win.window.conn.conn.core.DeleteProperty(  # type: ignore
-                win.wid, win.window.conn.atoms["_NET_WM_DESKTOP"]  # type: ignore
+            win.window.conn.conn.core.DeleteProperty(
+                win.wid, win.window.conn.atoms["_NET_WM_DESKTOP"]
             )
         self.qtile.unmanage(event.window)
         if self.qtile.current_window is None:
@@ -746,7 +751,7 @@ class Core(base.Core):
         """Simulates a keypress on the focused window."""
         # FIXME: This needs to be done with sendevent, once we have that fixed.
         modmasks = xcbq.translate_masks(modifiers)
-        keysym = xcbq.keysyms.get(key)
+        keysym = xcbq.keysyms.get(key.lower())
 
         class DummyEv:
             pass
@@ -846,4 +851,4 @@ class Core(base.Core):
 
     def keysym_from_name(self, name: str) -> int:
         """Get the keysym for a key from its name"""
-        return keysyms[name]
+        return keysyms[name.lower()]

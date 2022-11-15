@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import functools
 import operator
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import cairocffi
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
 
     from pywayland.server import Signal
     from wlroots import xwayland
-    from wlroots.wlr_types import data_device_manager
+    from wlroots.wlr_types import Surface, data_device_manager
 
     from libqtile.backend.wayland.core import Core
     from libqtile.backend.wayland.output import Output
@@ -96,7 +97,7 @@ def translate_masks(modifiers: list[str]) -> int:
     masks = []
     for i in modifiers:
         try:
-            masks.append(ModMasks[i])
+            masks.append(ModMasks[i.lower()])
         except KeyError as e:
             raise WlrQError("Unknown modifier: %s" % i) from e
     if masks:
@@ -190,10 +191,12 @@ class Dnd(HasListeners):
         self.height: int = 0
 
         self.add_listener(wlr_drag.destroy_event, self._on_destroy)
-        self.add_listener(wlr_drag.icon.map_event, self._on_icon_map)
-        self.add_listener(wlr_drag.icon.unmap_event, self._on_icon_unmap)
-        self.add_listener(wlr_drag.icon.destroy_event, self._on_icon_destroy)
-        self.add_listener(wlr_drag.icon.surface.commit_event, self._on_icon_commit)
+        self.icon = icon = wlr_drag.icon
+        if icon is not None:
+            self.add_listener(icon.map_event, self._on_icon_map)
+            self.add_listener(icon.unmap_event, self._on_icon_unmap)
+            self.add_listener(icon.destroy_event, self._on_icon_destroy)
+            self.add_listener(icon.surface.commit_event, self._on_icon_commit)
 
     def finalize(self) -> None:
         self.finalize_listeners()
@@ -217,9 +220,10 @@ class Dnd(HasListeners):
         logger.debug("Signal: wlr_drag_icon destroy")
 
     def _on_icon_commit(self, _listener: Listener, _event: Any) -> None:
-        self.width = self.wlr_drag.icon.surface.current.width
-        self.height = self.wlr_drag.icon.surface.current.height
-        self.position(self.core.cursor.x, self.core.cursor.y)
+        if self.icon is not None:
+            self.width = self.icon.surface.current.width
+            self.height = self.icon.surface.current.height
+            self.position(self.core.cursor.x, self.core.cursor.y)
 
     def position(self, cx: float, cy: float) -> None:
         self.x = cx
@@ -256,3 +260,15 @@ def get_xwayland_atoms(xwayland: xwayland.XWayland) -> dict[int, str]:
         atoms[xwayland.get_atom(atom)] = name
 
     return atoms
+
+
+@dataclass()
+class CursorState:
+    """
+    The surface and hotspot state of the cursor. This is tracked directly by the core so
+    that the cursor can be hidden and later restored to this state at will.
+    """
+
+    surface: Surface | None = None
+    hotspot: tuple[int, int] = (0, 0)
+    hidden: bool = False

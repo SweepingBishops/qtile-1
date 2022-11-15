@@ -5,7 +5,7 @@ Keys
 ====
 
 The ``keys`` variable defines Qtile's key bindings. Individual key bindings are
-defined with :class:`libqtile.config.Key` as demonstrated in the following
+defined with :class:`~libqtile.config.Key` as demonstrated in the following
 example. Note that you may specify more than one callback functions.
 
 ::
@@ -24,7 +24,7 @@ example. Note that you may specify more than one callback functions.
    ]
 
 The above may also be written more concisely with the help of the
-:class:`libqtile.config.EzKey` helper class. The following example is
+:class:`~libqtile.config.EzKey` helper class. The following example is
 functionally equivalent to the above::
 
     from libqtile.config import EzKey as Key
@@ -35,8 +35,8 @@ functionally equivalent to the above::
        Key("M-A-<Tab>", callback, ...),
     ]
 
-The :class:`EzKey` modifier keys (i.e. ``MASC``) can be overwritten through the
-``EzKey.modifier_keys`` dictionary. The defaults are::
+The :class:`~libqtile.config.EzKey` modifier keys (i.e. ``MASC``) can be
+overwritten through the ``EzKey.modifier_keys`` dictionary. The defaults are::
 
     modifier_keys = {
        'M': 'mod4',
@@ -46,7 +46,8 @@ The :class:`EzKey` modifier keys (i.e. ``MASC``) can be overwritten through the
     }
 
 Callbacks can also be configured to work only under certain conditions by using
-the ``when()`` method. Currently, the following conditions are supported:
+the :meth:`~libqtile.lazy.LazyCall.when` method. Currently, the following
+conditions are supported:
 
 ::  
 
@@ -72,10 +73,9 @@ the ``when()`` method. Currently, the following conditions are supported:
 KeyChords
 =========
 
-Qtile also allows sequences of keys to trigger callbacks. In Qtile, these
-sequences are known as chords and are defined with
-:class:`libqtile.config.KeyChord`. Chords are added to the ``keys`` section of
-the config file.
+Qtile also allows sequences of keys to trigger callbacks. These sequences are
+known as chords and are defined with :class:`~libqtile.config.KeyChord`. Chords
+are added to the ``keys`` section of the config file.
 
 ::
 
@@ -98,8 +98,8 @@ The above code will launch xterm when the user presses Mod + z, followed by x.
 Modes
 -----
 
-Chords can optionally specify a "mode". When this is done, the mode will remain
-active until the user presses <escape>. This can be useful for configuring a
+Chords can optionally persist until a user presses <escape>. This can be done
+by setting ``mode=True``. This can be useful for configuring a
 subset of commands for a particular situations (i.e. similar to vim modes).
 
 ::
@@ -112,7 +112,8 @@ subset of commands for a particular situations (i.e. similar to vim modes).
             Key([], "s", lazy.layout.shrink()),
             Key([], "n", lazy.layout.normalize()),
             Key([], "m", lazy.layout.maximize())],
-            mode="Windows"
+            mode=True,
+            name="Windows"
         )
     ]
 
@@ -121,9 +122,10 @@ then resize windows by just pressing g (to grow the window), s to
 shrink it etc. as many times as needed. To exit the mode, press <escape>.
 
 .. note::
-    If using modes, users may also wish to use the Chord widget
-    (:class:`libqtile.widget.chord.Chord`) as this will display the name of the
-    currently active mode on the bar.
+    The Chord widget (:class:`~libqtile.widget.Chord`) will display the name
+    of the active chord (as set by the ``name`` parameter). This is particularly
+    useful where the chord is a persistent mode as this will indicate when the
+    chord's mode is still active.
 
 Chains
 ------
@@ -154,9 +156,9 @@ demonstrates the behaviour when using the ``mode`` argument in chains:
             KeyChord([], "y", [
                 KeyChord([], "x", [
                     Key([], "c", lazy.spawn("xterm"))
-                ], mode="inner")
+                ], mode=True, name="inner")
             ])
-        ], mode="outer")
+        ], mode=True, name="outer")
     ]
 
 After pressing Mod+z y x c, the "inner" mode will remain active. When pressing
@@ -226,5 +228,5 @@ Reference
 .. qtile_class:: libqtile.config.KeyChord
    :no-commands:
 
-.. qtile_class:: libqtile.config.EzConfig
+.. qtile_class:: libqtile.config.EzKey
    :no-commands:

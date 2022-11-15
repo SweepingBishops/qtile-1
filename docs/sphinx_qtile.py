@@ -19,8 +19,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import builtins
-import functools
 import importlib
 import inspect
 import json
@@ -28,6 +26,7 @@ import os
 import pprint
 from pathlib import Path
 from subprocess import CalledProcessError, run
+from unittest.mock import MagicMock
 
 from docutils import nodes
 from docutils.parsers.rst import Directive
@@ -164,7 +163,7 @@ class QtileClass(SimpleDirectiveMixin, Directive):
             try:
                 with open(index, "r") as f:
                     shots = json.load(f)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, FileNotFoundError):
                 shots = {}
 
             widget_shots = shots.get(class_name.lower(), dict())
@@ -188,7 +187,10 @@ class QtileClass(SimpleDirectiveMixin, Directive):
         }
         if context['commandable']:
             context['commands'] = [
-                attr for attr in dir(obj) if attr.startswith('cmd_')
+                # Command methods have the "_cmd" attribute so we check for this
+                # However, some modules are Mocked so we need to exclude them
+                attr.__name__ for _, attr in inspect.getmembers(obj)
+                if hasattr(attr, "_cmd") and not isinstance(attr, MagicMock)
             ]
 
         rst = qtile_class_template.render(**context)
@@ -256,7 +258,12 @@ def generate_widget_screenshots():
 
 def setup(app):
     generate_keybinding_images()
-    generate_widget_screenshots()
+    # screenshots will be skipped unless QTILE_BUILD_SCREENSHOTS environment variable is set
+    # Variable is set for ReadTheDocs at https://readthedocs.org/dashboard/qtile/environmentvariables/
+    if os.getenv("QTILE_BUILD_SCREENSHOTS", False):
+        generate_widget_screenshots()
+    else:
+        print("Skipping screenshot builds...")
     app.add_directive('qtile_class', QtileClass)
     app.add_directive('qtile_hooks', QtileHooks)
     app.add_directive('qtile_module', QtileModule)

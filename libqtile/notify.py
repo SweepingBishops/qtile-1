@@ -200,25 +200,10 @@ if has_dbus:
             return (notif, self.add(notif))
 
         def close(self, nid):
-            notif = self.notifications[nid]
-
             for callback in self.close_callbacks:
                 try:
-                    callback(notif)
+                    callback(nid)
                 except Exception:
                     logger.exception("Exception in notifier close callback")
 
     notifier = NotificationManager()
-
-else:
-
-    class FakeManager:
-        def __init__(self):
-            logger.warning(
-                "dbus-next is not installed. Notification service and widget are unavailable."
-            )
-
-        async def register(self, *args, **kwargs):
-            pass
-
-    notifier = FakeManager()

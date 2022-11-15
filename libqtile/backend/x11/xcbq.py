@@ -62,15 +62,6 @@ class XCBQError(QtileError):
     pass
 
 
-def rdict(d):
-    r = {}
-    for k, v in d.items():
-        r.setdefault(v, []).append(k)
-    return r
-
-
-rkeysyms = rdict(keysyms)
-
 # Keyboard modifiers bitmask values from X Protocol
 ModMasks = {
     "shift": 1 << 0,
@@ -86,6 +77,7 @@ ModMasks = {
 AllButtonsMask = 0b11111 << 8
 ButtonMotionMask = 1 << 13
 ButtonReleaseMask = 1 << 3
+PointerMotionHintMask = 1 << 7
 
 NormalHintsFlags = {
     "USPosition": 1,  # User-specified x, y
@@ -391,7 +383,12 @@ class Colormap:
             def x8to16(i):
                 return 0xFFFF * (i & 0xFF) // 0xFF
 
-            color = hex(color)
+            try:
+                color = hex(color)
+            except ValueError:
+                logger.error("Colormap failed to allocate %s", color)
+                color = "#ff0000"
+
             r = x8to16(int(color[-6] + color[-5], 16))
             g = x8to16(int(color[-4] + color[-3], 16))
             b = x8to16(int(color[-2] + color[-1], 16))
@@ -706,9 +703,13 @@ class Painter:
         width = max((win.x + win.width for win in root_windows))
         height = max((win.y + win.height for win in root_windows))
 
-        root_pixmap = self.default_screen.root.get_property(
-            "_XROOTPMAP_ID", xcffib.xproto.Atom.PIXMAP, int
-        )
+        try:
+            root_pixmap = self.default_screen.root.get_property(
+                "_XROOTPMAP_ID", xcffib.xproto.Atom.PIXMAP, int
+            )
+        except xcffib.ConnectionException:
+            root_pixmap = None
+
         if not root_pixmap:
             root_pixmap = self.default_screen.root.get_property(
                 "ESETROOT_PMAP_ID", xcffib.xproto.Atom.PIXMAP, int
@@ -789,7 +790,7 @@ class Painter:
 
 
 def get_keysym(key: str) -> int:
-    keysym = keysyms.get(key)
+    keysym = keysyms.get(key.lower())
     if not keysym:
         raise XCBQError("Unknown key: %s" % key)
     return keysym
@@ -811,7 +812,7 @@ def translate_masks(modifiers: list[str]) -> int:
     masks = []
     for i in modifiers:
         try:
-            masks.append(ModMasks[i])
+            masks.append(ModMasks[i.lower()])
         except KeyError as e:
             raise XCBQError("Unknown modifier: %s" % i) from e
     if masks:

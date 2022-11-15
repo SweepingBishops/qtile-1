@@ -191,7 +191,7 @@ class Subscribe:
                 if c.name == "xterm":
                     c.togroup("a")
                 elif c.name == "dzen":
-                    c.cmd_static(0)
+                    c.static(0)
         """
         return self._subscribe("client_new", func)
 
@@ -304,7 +304,7 @@ class Subscribe:
         return self._subscribe("screen_change", func)
 
     def screens_reconfigured(self, func):
-        """Called once ``qtile.cmd_reconfigure_screens`` has completed (e.g. if
+        """Called once ``qtile.reconfigure_screens`` has completed (e.g. if
         ``reconfigure_screens`` is set to ``True`` in your config).
 
         **Arguments**
@@ -340,6 +340,21 @@ class Subscribe:
         """
         return self._subscribe("leave_chord", func)
 
+    def resume(self, func):
+        """
+        Called when system wakes up from sleep, suspend or hibernate.
+
+        Relies on systemd's inhibitor dbus interface, via the dbus-next package.
+
+        Note: the hook is not fired when resuming from shutdown/reboot events.
+        Use the "startup" hooks for those scenarios.
+
+        **Arguments**
+
+        None
+        """
+        return self._subscribe("resume", func)
+
 
 subscribe = Subscribe()
 
@@ -356,7 +371,7 @@ class Unsubscribe(Subscribe):
             lst.remove(func)
         except ValueError:
             raise utils.QtileError(
-                "Tried to unsubscribe a hook that was not" " currently subscribed"
+                "Tried to unsubscribe a hook that was not currently subscribed"
             )
 
 

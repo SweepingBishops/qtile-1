@@ -24,7 +24,7 @@ import typing
 from collections import defaultdict
 
 from libqtile import configurable
-from libqtile.command.base import CommandObject
+from libqtile.command.base import CommandObject, expose_command
 from libqtile.log_utils import logger
 from libqtile.utils import has_transparency, rgb
 
@@ -33,7 +33,7 @@ if typing.TYPE_CHECKING:
     from libqtile.widget.base import _Widget
 
 
-class Gap(CommandObject):
+class Gap:
     """A gap placed along one of the edges of the screen
 
     If a gap has been defined, Qtile will avoid covering it with windows. The
@@ -108,29 +108,18 @@ class Gap(CommandObject):
     def geometry(self):
         return (self.x, self.y, self.width, self.height)
 
-    def _items(self, name: str) -> ItemT:
-        if name == "screen" and self.screen is not None:
-            return True, []
-        return None
-
-    def _select(self, name, sel):
-        if name == "screen":
-            return self.screen
-
     @property
     def position(self):
         for i in ["top", "bottom", "left", "right"]:
             if getattr(self.screen, i) is self:
                 return i
 
+    @expose_command()
     def info(self):
-        return dict(position=self.position)
-
-    def cmd_info(self):
         """
         Info for this object.
         """
-        return self.info()
+        return dict(position=self.position)
 
 
 class Obj:
@@ -149,7 +138,7 @@ CALCULATED = Obj("CALCULATED")
 STATIC = Obj("STATIC")
 
 
-class Bar(Gap, configurable.Configurable):
+class Bar(Gap, configurable.Configurable, CommandObject):
     """A bar, which can contain widgets
 
     Parameters
@@ -401,6 +390,10 @@ class Bar(Gap, configurable.Configurable):
 
     def kill_window(self):
         """Kill the window when the bar's screen is no longer being used."""
+        for name, w in self.qtile.widgets_map.copy().items():
+            if w in self.widgets:
+                w.finalize()
+                del self.qtile.widgets_map[name]
         self.drawer.finalize()
         self.window.kill()
         self.window = None
@@ -636,6 +629,7 @@ class Bar(Gap, configurable.Configurable):
             else:
                 self.drawer.draw(offsety=end, height=self.length - end)
 
+    @expose_command()
     def info(self):
         return dict(
             size=self.size,
@@ -671,7 +665,8 @@ class Bar(Gap, configurable.Configurable):
 
         self._add_strut = True
 
-    def cmd_fake_button_press(self, screen, position, x, y, button=1):
+    @expose_command()
+    def fake_button_press(self, screen, position, x, y, button=1):
         """
         Fake a mouse-button-press on the bar. Co-ordinates are relative
         to the top-left corner of the bar.

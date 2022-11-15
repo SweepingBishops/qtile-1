@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING
 
 from libqtile import bar, configurable, confreader
 from libqtile.command import interface
-from libqtile.command.base import CommandError, CommandObject
+from libqtile.command.base import CommandError, CommandObject, expose_command
 from libqtile.lazy import LazyCall
 from libqtile.log_utils import logger
 
@@ -117,7 +117,7 @@ class _Widget(CommandObject, configurable.Configurable):
         from libqtile import qtile
 
         def open_calendar():
-            qtile.cmd_spawn('gsimplecal next_month')
+            qtile.spawn('gsimplecal next_month')
 
         clock = widget.Clock(
             mouse_callbacks={
@@ -170,6 +170,7 @@ class _Widget(CommandObject, configurable.Configurable):
 
         self.configured = False
         self._futures: list[asyncio.TimerHandle] = []
+        self._mirrors: set[_Widget] = set()
 
     @property
     def length(self):
@@ -248,7 +249,9 @@ class _Widget(CommandObject, configurable.Configurable):
         self.drawer.set_source_rgb(self.bar.background)
         self.drawer.fillrect(self.offsetx, self.offsety, self.width, self.height)
 
+    @expose_command()
     def info(self):
+        """Info for this object."""
         return dict(
             name=self.name,
             offset=self.offset,
@@ -300,12 +303,6 @@ class _Widget(CommandObject, configurable.Configurable):
             return self.bar
         elif name == "screen":
             return self.bar.screen
-
-    def cmd_info(self):
-        """
-        Info for this object.
-        """
-        return self.info()
 
     def draw(self):
         """
@@ -369,6 +366,43 @@ class _Widget(CommandObject, configurable.Configurable):
     def mouse_leave(self, x, y):
         pass
 
+    def _draw_with_mirrors(self) -> None:
+        self._old_draw()
+        for mirror in self._mirrors:
+            if not mirror.configured:
+                continue
+
+            # If the widget and mirror are on the same bar then we could have an
+            # infinite loop when we call bar.draw(). mirror.draw() will trigger a resize
+            # if it's the wrong size.
+            if mirror.length_type == bar.CALCULATED and mirror.bar is not self.bar:
+                mirror.bar.draw()
+            else:
+                mirror.draw()
+
+    def add_mirror(self, widget: _Widget):
+        if not self._mirrors:
+            self._old_draw = self.draw
+            self.draw = self._draw_with_mirrors  # type: ignore
+
+        self._mirrors.add(widget)
+        if not self.drawer.has_mirrors:
+            self.drawer.has_mirrors = True
+
+    def remove_mirror(self, widget: _Widget):
+        try:
+            self._mirrors.remove(widget)
+        except KeyError:
+            pass
+
+        if not self._mirrors:
+            self.drawer.has_mirrors = False
+
+            if hasattr(self, "_old_draw"):
+                # Deletes the reference to draw and falls back to the original
+                del self.draw
+                del self._old_draw
+
 
 UNSPECIFIED = bar.Obj("UNSPECIFIED")
 
@@ -386,8 +420,38 @@ class _TextBox(_Widget):
         ("foreground", "ffffff", "Foreground colour"),
         ("fontshadow", None, "font shadow color, default is None(no shadow)"),
         ("markup", True, "Whether or not to use pango markup"),
-        ("fmt", "{}", "How to format the text"),
+        (
+            "fmt",
+            "{}",
+            "To format the string returned by the widget. For example, if the clock widget \
+             returns '08:46' we can do fmt='time {}' do print 'time 08:46' on the widget. \
+             To format the individual strings like hour and minutes use the format paramater \
+             of the widget (if it has one)",
+        ),
         ("max_chars", 0, "Maximum number of characters to display in widget."),
+        (
+            "scroll",
+            False,
+            "Whether text should be scrolled. When True, you must set the widget's ``width``.",
+        ),
+        (
+            "scroll_repeat",
+            True,
+            "Whether text should restart scrolling once the text has ended",
+        ),
+        (
+            "scroll_delay",
+            2,
+            "Number of seconds to pause before starting scrolling and restarting/clearing text at end",
+        ),
+        ("scroll_step", 1, "Number of pixels to scroll with each step"),
+        ("scroll_interval", 0.1, "Time in seconds before next scrolling step"),
+        (
+            "scroll_clear",
+            False,
+            "Whether text should scroll completely away (True) or stop when the end of the text is shown (False)",
+        ),
+        ("scroll_hide", False, "Whether the widget should hide when scrolling has finished"),
     ]  # type: list[tuple[str, Any, str]]
 
     def __init__(self, text=" ", width=bar.CALCULATED, **config):
@@ -395,6 +459,12 @@ class _TextBox(_Widget):
         _Widget.__init__(self, width, **config)
         self.add_defaults(_TextBox.defaults)
         self.text = text
+        self._is_scrolling = False
+        self._should_scroll = False
+        self._scroll_offset = 0
+        self._scroll_queued = False
+        self._scroll_timer = None
+        self._scroll_width = width
 
     @property
     def text(self):
@@ -407,6 +477,9 @@ class _TextBox(_Widget):
         self._text = value
         if self.layout:
             self.layout.text = self.formatted_text
+            if self.scroll:
+                self.check_width()
+                self.reset_scroll()
 
     @property
     def formatted_text(self):
@@ -461,6 +534,26 @@ class _TextBox(_Widget):
             self.fontshadow,
             markup=self.markup,
         )
+        if not isinstance(self._scroll_width, int) and self.scroll:
+            logger.warning("%s: You must specify a width when enabling scrolling.", self.name)
+            self.scroll = False
+
+        if self.scroll:
+            self.check_width()
+
+    def check_width(self):
+        """
+        Check whether the widget needs to have calculated or fixed width
+        and whether the text should be scrolled.
+        """
+        if self.layout.width > self._scroll_width:
+            self.length_type = bar.STATIC
+            self.length = self._scroll_width
+            self._is_scrolling = True
+            self._should_scroll = True
+        else:
+            self.length_type = bar.CALCULATED
+            self._should_scroll = False
 
     def calculate_length(self):
         if self.text:
@@ -481,15 +574,11 @@ class _TextBox(_Widget):
         if not self.can_draw():
             return
         self.drawer.clear(self.background or self.bar.background)
-        if self.bar.horizontal:
-            self.layout.draw(
-                self.actual_padding or 0,
-                int(self.bar.height / 2.0 - self.layout.height / 2.0) + 1,
-            )
-        else:
-            # We need to do some transformations for vertical bars.
-            self.drawer.ctx.save()
 
+        # size = self.bar.height if self.bar.horizontal else self.bar.width
+        self.drawer.ctx.save()
+
+        if not self.bar.horizontal:
             # Left bar reads bottom to top
             if self.bar.screen.left is self.bar:
                 self.drawer.ctx.rotate(-90 * math.pi / 180.0)
@@ -500,14 +589,84 @@ class _TextBox(_Widget):
                 self.drawer.ctx.translate(self.bar.width, 0)
                 self.drawer.ctx.rotate(90 * math.pi / 180.0)
 
-            self.layout.draw(
-                self.actual_padding or 0, int(self.bar.width / 2.0 - self.layout.height / 2.0) + 1
+        # If we're scrolling, we clip the context to the scroll width less the padding
+        # Move the text layout position (and we only see the clipped portion)
+        if self._should_scroll:
+            self.drawer.ctx.rectangle(
+                self.actual_padding,
+                0,
+                self._scroll_width - 2 * self.actual_padding,
+                self.bar.size,
             )
-            self.drawer.ctx.restore()
+            self.drawer.ctx.clip()
 
-        self.drawer.draw(offsetx=self.offsetx, offsety=self.offsety, width=self.width)
+        size = self.bar.height if self.bar.horizontal else self.bar.width
 
-    def cmd_set_font(self, font=UNSPECIFIED, fontsize=UNSPECIFIED, fontshadow=UNSPECIFIED):
+        self.layout.draw(
+            (self.actual_padding or 0) - self._scroll_offset,
+            int(size / 2.0 - self.layout.height / 2.0) + 1,
+        )
+        self.drawer.ctx.restore()
+
+        self.drawer.draw(
+            offsetx=self.offsetx, offsety=self.offsety, width=self.width, height=self.height
+        )
+
+        # We only want to scroll if:
+        # - User has asked us to scroll and the scroll width is smaller than the layout (should_scroll=True)
+        # - We are still scrolling (is_scrolling=True)
+        # - We haven't already queued the next scroll (scroll_queued=False)
+        if self._should_scroll and self._is_scrolling and not self._scroll_queued:
+            self._scroll_queued = True
+            if self._scroll_offset == 0:
+                interval = self.scroll_delay
+            else:
+                interval = self.scroll_interval
+            self._scroll_timer = self.timeout_add(interval, self.do_scroll)
+
+    def do_scroll(self):
+        # Allow the next scroll tick to be queued
+        self._scroll_queued = False
+
+        # If we're still scrolling, adjust the next offset
+        if self._is_scrolling:
+            self._scroll_offset += self.scroll_step
+
+        # Check whether we need to stop scrolling when:
+        # - we've scrolled all the text off the widget (scroll_clear = True)
+        # - the final pixel is visible (scroll_clear = False)
+        if (self.scroll_clear and self._scroll_offset > self.layout.width) or (
+            not self.scroll_clear
+            and (self.layout.width - self._scroll_offset)
+            < (self._scroll_width - 2 * self.actual_padding)
+        ):
+            self._is_scrolling = False
+
+        # We've reached the end of the scroll so what next?
+        if not self._is_scrolling:
+            if self.scroll_repeat:
+                # Pause and restart scrolling
+                self._scroll_timer = self.timeout_add(self.scroll_delay, self.reset_scroll)
+            elif self.scroll_hide:
+                # Clear the text
+                self._scroll_timer = self.timeout_add(self.scroll_delay, self.hide_scroll)
+            # If neither of these options then the text is no longer updated.
+
+        self.draw()
+
+    def reset_scroll(self):
+        self._scroll_offset = 0
+        self._is_scrolling = True
+        self._scroll_queued = False
+        if self._scroll_timer:
+            self._scroll_timer.cancel()
+        self.draw()
+
+    def hide_scroll(self):
+        self.update("")
+
+    @expose_command()
+    def set_font(self, font=UNSPECIFIED, fontsize=UNSPECIFIED, fontshadow=UNSPECIFIED):
         """
         Change the font used by this widget. If font is None, the current
         font is used.
@@ -520,6 +679,7 @@ class _TextBox(_Widget):
             self.fontshadow = fontshadow
         self.bar.draw()
 
+    @expose_command()
     def info(self):
         d = _Widget.info(self)
         d["foreground"] = self.foreground
@@ -527,6 +687,7 @@ class _TextBox(_Widget):
         return d
 
     def update(self, text):
+        """Update the widget text."""
         if self.text == text:
             return
         if text is None:
@@ -560,8 +721,8 @@ class InLoopPollText(_TextBox):
         ),
     ]  # type: list[tuple[str, Any, str]]
 
-    def __init__(self, default_text="N/A", width=bar.CALCULATED, **config):
-        _TextBox.__init__(self, default_text, width, **config)
+    def __init__(self, default_text="N/A", **config):
+        _TextBox.__init__(self, default_text, **config)
         self.add_defaults(InLoopPollText.defaults)
 
     def timer_setup(self):
@@ -616,7 +777,7 @@ class ThreadPoolText(_TextBox):
     ]  # type: list[tuple[str, Any, str]]
 
     def __init__(self, text, **config):
-        super().__init__(text, width=bar.CALCULATED, **config)
+        super().__init__(text, **config)
         self.add_defaults(ThreadPoolText.defaults)
 
     def timer_setup(self):
@@ -646,6 +807,11 @@ class ThreadPoolText(_TextBox):
 
     def poll(self):
         pass
+
+    @expose_command()
+    def force_update(self):
+        """Immediately poll the widget. Existing timers are unaffected."""
+        self.update(self.poll())
 
 
 # these two classes below look SUSPICIOUSLY similar
@@ -713,44 +879,44 @@ class Mirror(_Widget):
 
     def __init__(self, reflection, **config):
         _Widget.__init__(self, reflection.length, **config)
-        reflection.draw = self.hook(reflection.draw)
         self.reflects = reflection
         self._length = 0
+        self.length_type = self.reflects.length_type
 
     def _configure(self, qtile, bar):
         _Widget._configure(self, qtile, bar)
-        self.reflects.drawer.add_mirror(self.drawer)
+        self.reflects.add_mirror(self)
         # We need to fill the background once before `draw` is called so, if
         # there's no reflection, the mirror matches its parent bar.
         self.drawer.clear(self.background or self.bar.background)
 
+    def calculate_length(self):
+        return self.reflects.calculate_length()
+
     @property
     def length(self):
-        return self.reflects.length
+        if self.length_type != bar.STRETCH:
+            return self.reflects.length
+        return self._length
 
     @length.setter
     def length(self, value):
         self._length = value
 
-    def hook(self, draw):
-        def _():
-            draw()
-            self.draw()
-
-        return _
-
     def draw(self):
-        if self._length != self.reflects.length:
-            self._length = self.length
-            self.bar.draw()
-        else:
-            # We only update the mirror's drawer if the parent widget has
-            # contents in its RecordingSurface. If this is False then the widget
-            # wil just show the existing drawer contents.
-            if self.reflects.drawer.needs_update:
-                self.drawer.clear(self.background or self.bar.background)
-                self.reflects.drawer.paint_to(self.drawer)
-            self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
+        self.drawer.clear(self.reflects.background or self.bar.background)
+        self.reflects.drawer.paint_to(self.drawer)
+        self.drawer.draw(offsetx=self.offset, offsety=self.offsety, width=self.width)
 
     def button_press(self, x, y, button):
         self.reflects.button_press(x, y, button)
+
+    def mouse_enter(self, x, y):
+        self.reflects.mouse_enter(x, y)
+
+    def mouse_leave(self, x, y):
+        self.reflects.mouse_leave(x, y)
+
+    def finalize(self):
+        self.reflects.remove_mirror(self)
+        _Widget.finalize(self)

@@ -22,16 +22,27 @@ Qtile x.xx.x, released XXXX-XX-XX:
         - Add ability to set icon size in `LaunchBar` widget.
         - Add 'warp_pointer' option to `Drag` that when set will warp the pointer to the bottom right of
           the window when dragging begins.
+        - Add `currentsong` status to `Mpd2` widget.
         - Add ability to disable group toggling in `GroupBox` widget
         - Add ability to have different border color when windows are stacked in Stack layout. Requires 
           setting `border_focus_stack` and `border_normal_stack` variables.
         - New widget: GenPollCommand
+        - Add ability to add a group at a specified index
+        - Add ability to spawn the `WidgetBox` widget opened.
+        - Add ability to swap focused window based on index, and change the order of windows inside current group
+        - Add `move_to_slice` command to move current window to single layout in `Slice` layout
     * bugfixes
         - Fix bug where Window.center() centers window on the wrong screen when using multiple monitors.
         - Fix `Notify` bug when apps close notifications.
+        - Fix `CPU` precision bug with specific version of `psutil`
+        - Fix config being reevaluated twice during reload (e.g. all hooks from config were doubled)
+        - Fix `PulseVolume` high CPU usage when update_interval set to 0.
+        - Fix `Battery` widget on FreeBSD without explicit `battery` index given.
+        - Fix laggy resize in X11 by limiting the MotionNotify fps to a default of 120. This is configurable
+          per screen with the x11_drag_polling_rate variable.
     * python version support
         - We have added support for python 3.11 and pypy 3.9.
-        - python 3.7 and pypy 3.7 are not longer supported.
+        - python 3.7, 3.8 and pypy 3.7 are not longer supported.
         - Fix bug where `StatusNotifier` does not update icons
 
 Qtile 0.22.0, released 2022-09-22:
@@ -117,6 +128,7 @@ Qtile 0.20.0, released 2022-01-24:
         - Fix bug where `Battery` widget did not retrieve `background` from `widget_defaults`.
         - Fix bug where widgets in a `WidgetBox` are rendered on top of bar borders.
 
+        - Add ability to swap focused window based on index, and change the order of windows inside current group
 Qtile 0.19.0, released 2021-12-22:
     * features
         - Add ability to draw borders to the Bar. Can customise size and colour per edge.

@@ -520,6 +520,16 @@ def test_adddelgroup(manager):
 
 
 @manager_config
+def test_addgroupat(manager):
+    manager.test_window("one")
+    group_count = len(manager.c.get_groups())
+    manager.c.addgroup("aa", index=1)
+
+    assert len(manager.c.get_groups()) == group_count + 1
+    assert list(manager.c.get_groups())[1] == "aa"
+
+
+@manager_config
 def test_delgroup(manager):
     manager.test_window("one")
     for i in ["a", "d", "c"]:
@@ -1157,7 +1167,10 @@ def test_reload_config(manager_nospawn):
 
     # Reload #1 - with libqtile.qtile.test_data
     manager_nospawn.c.eval("self.test_data = 1")
+    manager_nospawn.c.eval("self.test_data_config_evaluations = 0")
     manager_nospawn.c.reload_config()
+    # should be readed twice (check+read), but no more
+    assert manager_nospawn.c.eval("self.test_data_config_evaluations") == (True, "2")
     assert manager_nospawn.c.eval("len(self.keys_map)") == (True, "2")
     assert manager_nospawn.c.eval("len(self.mouse_map)") == (True, "2")
     assert "".join(manager_nospawn.c.get_groups().keys()) == "123456789S"
@@ -1182,6 +1195,7 @@ def test_reload_config(manager_nospawn):
 
     # Reload #2 - back to without libqtile.qtile.test_data
     manager_nospawn.c.eval("del self.test_data")
+    manager_nospawn.c.eval("del self.test_data_config_evaluations")
     manager_nospawn.c.reload_config()
     assert manager_nospawn.c.eval("len(self.keys_map)") == (True, "1")
     assert manager_nospawn.c.eval("len(self.mouse_map)") == (True, "1")

@@ -138,14 +138,14 @@ class _Widget(CommandObject, configurable.Configurable):
 
     offsetx: int = 0
     offsety: int = 0
-    defaults = [
+    defaults: list[tuple[str, Any, str]] = [
         ("background", None, "Widget background color"),
         (
             "mouse_callbacks",
             {},
             "Dict of mouse button press callback functions. Accepts functions and ``lazy`` calls.",
         ),
-    ]  # type: list[tuple[str, Any, str]]
+    ]
 
     def __init__(self, length, **config):
         """
@@ -350,7 +350,12 @@ class _Widget(CommandObject, configurable.Configurable):
     def _wrapper(self, method, *method_args):
         self._remove_dead_timers()
         try:
-            method(*method_args)
+            if asyncio.iscoroutinefunction(method):
+                asyncio.create_task(method(*method_args))
+            elif asyncio.iscoroutine(method):
+                asyncio.create_task(method)
+            else:
+                method(*method_args)
         except:  # noqa: E722
             logger.exception("got exception from widget timer")
 
@@ -800,7 +805,7 @@ class ThreadPoolText(_TextBox):
                 except Exception:
                     logger.exception("Failed to reschedule.")
             else:
-                logger.warning("poll() returned None, not rescheduling")
+                logger.warning("%s's poll() returned None, not rescheduling", self.name)
 
         self.future = self.qtile.run_in_executor(self.poll)
         self.future.add_done_callback(on_done)

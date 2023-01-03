@@ -369,6 +369,11 @@ class Screen(CommandObject):
     resized to fill it. If the mode is ``"stretch"``, the image is stretched to fit all
     of it into the screen.
 
+    The ``x11_drag_polling_rate`` parameter specifies the rate for drag events in the X11
+    backend. By default this is set to 120, but if you prefer it you can set it lower for
+    better performance or higher if you have a high refresh rate monitor. 120 would mean
+    that we handle a drag event 120 times per second.
+
     """
 
     group: _Group
@@ -382,6 +387,7 @@ class Screen(CommandObject):
         right: BarType | None = None,
         wallpaper: str | None = None,
         wallpaper_mode: str | None = None,
+        x11_drag_polling_rate: int = 120,
         x: int | None = None,
         y: int | None = None,
         width: int | None = None,
@@ -394,6 +400,7 @@ class Screen(CommandObject):
         self.right = right
         self.wallpaper = wallpaper
         self.wallpaper_mode = wallpaper_mode
+        self.x11_drag_polling_rate = x11_drag_polling_rate
         self.qtile: Qtile | None = None
         # x position of upper left corner can be > 0
         # if one screen is "right" of the other
@@ -640,8 +647,8 @@ class Group:
     exclusive:
         When other apps are started in this group, should we allow them here or not?
     spawn:
-        This will be ``exec()`` d when the group is created. Tou can pass either a
-        program name or a list of programs to ``exec()``
+        This will be executed (via ``qtile.spawn()``) when the group is created. You can pass either a
+        program name or a list of programs to ``exec()``.
     layout:
         The name of default layout for this group (e.g. ``"max"``). This is the name
         specified for a particular layout in ``config.py`` or if not defined it defaults

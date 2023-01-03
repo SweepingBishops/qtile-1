@@ -436,8 +436,10 @@ class Qtile(CommandObject):
 
     def grab_key(self, key: Key | KeyChord) -> None:
         """Grab the given key event"""
-        keysym, mask_key = self.core.grab_key(key)
-        self.keys_map[(keysym, mask_key)] = key
+        syms = self.core.grab_key(key)
+        if syms in self.keys_map:
+            logger.warning("Key spec duplicated, overriding previous: %s", key)
+        self.keys_map[syms] = key
 
     def ungrab_key(self, key: Key | KeyChord) -> None:
         """Ungrab a given key event"""
@@ -519,10 +521,15 @@ class Qtile(CommandObject):
         layout: str | None = None,
         layouts: list[Layout] | None = None,
         label: str | None = None,
+        index: int | None = None,
     ) -> bool:
         if name not in self.groups_map.keys():
             g = _Group(name, layout, label=label)
-            self.groups.append(g)
+            if index is None:
+                self.groups.append(g)
+            else:
+                self.groups.insert(index, g)
+
             if not layouts:
                 layouts = self.config.layouts
             g._configure(layouts, self.config.floating_layout, self)
@@ -1379,6 +1386,32 @@ class Qtile(CommandObject):
         mb.start_input(prompt, self.find_window, "window", strict_completer=True)
 
     @expose_command()
+    def switch_window(self, location: int) -> None:
+        """
+        Change to the window at the specified index in the current group.
+        """
+        windows = self.current_group.windows
+        if location < 1 or location > len(windows):
+            return
+
+        self.current_group.focus(windows[location - 1])
+
+    @expose_command()
+    def change_window_order(self, new_location: int) -> None:
+        """
+        Change the order of the current window within the current group.
+        """
+        if new_location < 1 or new_location > len(self.current_group.windows):
+            return
+
+        windows = self.current_group.windows
+        current_window_index = windows.index(self.current_window)
+
+        temp = windows[current_window_index]
+        windows[current_window_index] = windows[new_location - 1]
+        windows[new_location - 1] = temp
+
+    @expose_command()
     def next_urgent(self) -> None:
         """Focus next window with urgent hint"""
         try:
@@ -1564,9 +1597,12 @@ class Qtile(CommandObject):
         label: str | None = None,
         layout: str | None = None,
         layouts: list[Layout] | None = None,
+        index: int | None = None,
     ) -> bool:
         """Add a group with the given name"""
-        return self.add_group(name=group, layout=layout, layouts=layouts, label=label)
+        return self.add_group(
+            name=group, layout=layout, layouts=layouts, label=label, index=index
+        )
 
     @expose_command()
     def delgroup(self, group: str) -> None:
@@ -1627,7 +1663,7 @@ class Qtile(CommandObject):
             screen = self.current_screen
             is_show = None
             for bar in [screen.left, screen.right, screen.top, screen.bottom]:
-                if bar:
+                if isinstance(bar, libqtile.bar.Bar):
                     if is_show is None:
                         is_show = not bar.is_show()
                     bar.show(is_show)
